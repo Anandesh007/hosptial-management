@@ -14,16 +14,21 @@ import {
   patch,
   put,
   del,
+  HttpErrors,
   requestBody,
   response,
 } from '@loopback/rest';
 import {Doctor} from '../models';
-import {DoctorRepository} from '../repositories';
+import {DoctorRepository,DoctorLeaveRepository,AppointmentRepository} from '../repositories';
 
 export class DoctorController {
   constructor(
     @repository(DoctorRepository)
     public doctorRepository: DoctorRepository,
+    @repository(DoctorLeaveRepository)
+    public doctorLeaveRepo: DoctorLeaveRepository,
+    @repository(AppointmentRepository)
+    public appointmentRepo: AppointmentRepository,
   ) {}
 
   // 🔹 CREATE Doctor
@@ -115,5 +120,90 @@ export class DoctorController {
   @response(204, {description: 'Doctor DELETE success'})
   async deleteById(@param.path.number('id') id: number): Promise<void> {
     await this.doctorRepository.deleteById(id);
+  }
+
+  @post('/doctor-leave')
+  @response(200, {
+    description: 'Doctor leave recorded successfully',
+  })
+  async applyLeave(
+    @requestBody({
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              doctorId: {type: 'number'},
+              leaveDate: {type: 'string', format: 'date'},
+              reason: {type: 'string'},
+            },
+            required: ['doctorId', 'leaveDate'],
+          },
+        },
+      },
+    })
+    body: {doctorId: number; leaveDate: string; reason?: string},
+  ) {
+    const doctor = await this.doctorRepository.findById(body.doctorId);
+    if (!doctor) throw new HttpErrors.NotFound('Doctor not found');
+
+    // Save the leave record
+    await this.doctorLeaveRepo.create({
+      doctorId: body.doctorId,
+      leaveDate: body.leaveDate,
+      reason: body.reason ?? '',
+    });
+
+    // Find all appointments for that doctor on that leave date
+    const appointments = await this.appointmentRepo.find({
+      where: {
+        and: [
+          {doctorId: body.doctorId},
+          {appointmentDate: body.leaveDate},
+        ],
+      },
+    });
+
+    // Parse available days from doctor record
+    const availableDays = doctor.availableDays
+      ? doctor.availableDays.split(',').map(d => d.trim().toLowerCase())
+      : [];
+
+    // Calculate next available date
+    const nextAvailableDate = this.findNextAvailableDate(
+      body.leaveDate,
+      availableDays,
+    );
+
+    // Reschedule all appointments
+    for (const appointment of appointments) {
+      appointment.appointmentDate = nextAvailableDate;
+      appointment.updatedAt = new Date().toISOString();
+      appointment.appointmentStatus = 'Rescheduled (Doctor on leave)';
+      await this.appointmentRepo.updateById(appointment.appointmentId, appointment);
+    }
+
+    return {
+      message: `Leave recorded for ${doctor.firstName} on ${body.leaveDate}. ${appointments.length} appointment(s) rescheduled to ${nextAvailableDate}.`,
+    };
+  }
+
+  /**
+   * Helper function to find the next available date after leaveDate
+   */
+  private findNextAvailableDate(leaveDate: string, availableDays: string[]): string {
+    const date = new Date(leaveDate);
+
+    for (let i = 1; i <= 7; i++) {
+      date.setDate(date.getDate() + 1);
+      const weekday = date
+        .toLocaleDateString('en-US', {weekday: 'long'})
+        .toLowerCase()
+        .slice(0, 3);
+      if (availableDays.includes(weekday)) {
+        return date.toISOString().split('T')[0];
+      }
+    }
+    throw new HttpErrors.BadRequest('No available day found within next 7 days');
   }
 }
