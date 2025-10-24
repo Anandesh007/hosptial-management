@@ -1,7 +1,7 @@
 import {repository} from '@loopback/repository';
 import {post, get, param, requestBody, response, patch, del,HttpErrors} from '@loopback/rest';
 import {Appointment} from '../models';
-import {AppointmentRepository, DoctorRepository} from '../repositories';
+import {AppointmentRepository, DoctorRepository, DoctorLeaveRepository} from '../repositories';
 
 export class AppointmentController {
   constructor(
@@ -9,6 +9,8 @@ export class AppointmentController {
     public appointmentRepository: AppointmentRepository,
     @repository(DoctorRepository)
     public doctorRepository: DoctorRepository,
+    @repository(DoctorLeaveRepository)
+    public doctorLeaveRepository: DoctorLeaveRepository,
   ) {}
 
   // Create an appointment
@@ -43,6 +45,24 @@ export class AppointmentController {
         'No doctor found with the given name and specialization',
       );
     }
+
+    //Check if the doctor is on leave for that appointment date
+    const isOnLeave = await this.doctorLeaveRepository.findOne({
+      where: {
+        and: [
+        {doctorId: doctor.doctorId},
+        {leaveDate: appointmentData.appointmentDate},
+        ],
+      },
+      });
+
+    if (isOnLeave) {
+  // Option 1: Throw error and ask to pick another date
+  throw new HttpErrors.BadRequest(
+    `Doctor ${doctor.firstName} is on leave on ${appointmentData.appointmentDate}`,
+  );
+}
+
 
     // Check doctor's availability for the appointment day
     if (doctor.availableDays) {
@@ -79,6 +99,7 @@ export class AppointmentController {
           ],
         },
       });
+      
 
       if (alternativeDoctor) {
         doctor = alternativeDoctor;
