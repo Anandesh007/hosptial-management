@@ -2,6 +2,7 @@ import {repository} from '@loopback/repository';
 import {post, get, param, requestBody, response, patch, del,HttpErrors} from '@loopback/rest';
 import {Appointment} from '../models';
 import {AppointmentRepository, DoctorRepository, DoctorLeaveRepository} from '../repositories';
+import winston from 'winston';
 
 export class AppointmentController {
   constructor(
@@ -11,7 +12,8 @@ export class AppointmentController {
     public doctorRepository: DoctorRepository,
     @repository(DoctorLeaveRepository)
     public doctorLeaveRepository: DoctorLeaveRepository,
-  ) {}
+  ) {
+  }
 
   // Create an appointment
   @post('/appointments')
@@ -126,6 +128,8 @@ export class AppointmentController {
   })
   async find(): Promise<Appointment[]> {
     return this.appointmentRepository.find();
+    
+    
   }
 
   @get('/doctor/{doctorName}')
@@ -159,6 +163,7 @@ async finddoctorname(
     return this.appointmentRepository.findById(id);
   }
 
+  //Reschedule the appointment
   @patch('/appointments/reschedule/{id}')
   @response(200, {
   description: 'Reschedule an existing appointment',
@@ -249,6 +254,7 @@ async finddoctorname(
 
     await this.appointmentRepository.deleteById(id);
   }
+  
 }
 
   
