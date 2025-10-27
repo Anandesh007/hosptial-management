@@ -51,7 +51,6 @@ export class Appointment extends Entity {
   })
   consultationNotes?: string;
 
-
   @property({type: 'string',
     required:true,
     postgresql: {columnName: 'specialization'}

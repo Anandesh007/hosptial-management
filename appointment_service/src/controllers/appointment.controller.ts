@@ -1,8 +1,11 @@
 import {repository} from '@loopback/repository';
-import {post, get, param, requestBody, response, patch, del,HttpErrors} from '@loopback/rest';
+import {post, get, param,RestBindings, requestBody, response,Request, patch, del,HttpErrors} from '@loopback/rest';
+import {inject} from '@loopback/core';
 import {Appointment} from '../models';
 import {AppointmentRepository, DoctorRepository, DoctorLeaveRepository} from '../repositories';
-import winston from 'winston';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = 'myjwtsecret';
 
 export class AppointmentController {
   constructor(
@@ -12,6 +15,7 @@ export class AppointmentController {
     public doctorRepository: DoctorRepository,
     @repository(DoctorLeaveRepository)
     public doctorLeaveRepository: DoctorLeaveRepository,
+    @inject(RestBindings.Http.REQUEST) private req: Request,
   ) {
   }
 
@@ -24,6 +28,7 @@ export class AppointmentController {
   async createAppointment(
     @requestBody() appointmentData: Appointment,
   ): Promise<Appointment> {
+    this.verifyToken(['receptionist']);
     let doctor=null;
 
     if (!appointmentData.doctorName) {
@@ -127,11 +132,11 @@ export class AppointmentController {
     content: {'application/json': {schema: {type: 'array', items: {'x-ts-type': Appointment}}}},
   })
   async find(): Promise<Appointment[]> {
+    this.verifyToken(['admin','receptionist']);
     return this.appointmentRepository.find();
-    
-    
   }
 
+  //Get doctor by name
   @get('/doctor/{doctorName}')
   @response(200, {
   description: 'Appointments for Doctor',
@@ -147,11 +152,11 @@ export class AppointmentController {
 async finddoctorname(
   @param.path.string('doctorName') doctorName: string,
 ): Promise<Appointment[]> {
+  this.verifyToken(['admin','receptionist']);
   return this.appointmentRepository.find({
     where: {doctorName: doctorName},
   });
 }
-
 
   // Get appointment by ID
   @get('/appointments/{id}')
@@ -160,6 +165,7 @@ async finddoctorname(
     content: {'application/json': {schema: {'x-ts-type': Appointment}}},
   })
   async findById(@param.path.number('id') id: number): Promise<Appointment> {
+    this.verifyToken(['admin','receptionist']);
     return this.appointmentRepository.findById(id);
   }
 
@@ -186,6 +192,7 @@ async finddoctorname(
     })
     requestBody: {newDate: string},
   ): Promise<Appointment> {
+    this.verifyToken(['doctor','receptionist']);
   // Find the existing appointment
   const appointment = await this.appointmentRepository.findById(id);
   if (!appointment) {
@@ -229,7 +236,7 @@ async finddoctorname(
     );
   }
 
-  // Step 5️⃣: Update the appointment date
+  //Update the appointment date
   appointment.appointmentDate = requestBody.newDate;
   appointment.updatedAt = new Date().toISOString();
   appointment.appointmentStatus = 'Rescheduled';
@@ -247,12 +254,28 @@ async finddoctorname(
   async cancelAppointment(
     @param.path.number('id') id: number,
   ): Promise<void> {
+    this.verifyToken(['doctor','receptionist']);
     const appointment = await this.appointmentRepository.findById(id);
     if (!appointment) {
       throw new HttpErrors.NotFound('Appointment not found');
     }
 
     await this.appointmentRepository.deleteById(id);
+  }
+
+  private verifyToken(requiredRoles: string[] = []) {
+    const authHeader = this.req.headers.authorization;
+    if (!authHeader) throw new HttpErrors.Unauthorized('No authorization header');
+    const token = authHeader.replace('Bearer ', '');
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      if (requiredRoles.length && !requiredRoles.includes(decoded.role)) {
+        throw new HttpErrors.Forbidden('Access denied for this role');
+      }
+      return decoded; // {id, email, role}
+    } catch {
+      throw new HttpErrors.Unauthorized('Invalid or expired token');
+    }
   }
   
 }

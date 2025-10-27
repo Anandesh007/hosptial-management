@@ -5,7 +5,7 @@ import {sign} from 'jsonwebtoken';
 import {User} from '../models';
 import {DoctorRepository, UserRepository} from '../repositories';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'myjwtsecret';
+const JWT_SECRET = 'myjwtsecret';
 
 export class AuthController {
   constructor(
@@ -15,9 +15,7 @@ export class AuthController {
     public doctorRepo: DoctorRepository
   ) {}
 
-  // -----------------------
-  // 1. REGISTER
-  // -----------------------
+  // REGISTER
   @post('/auth/register')
   async register(
     @requestBody() userData: {username: string; email: string; password: string; role: string},
@@ -42,6 +40,7 @@ export class AuthController {
     };
   }
 
+  //register the doctor
   @post('/doctor/register')
   async doctorregister(
     @requestBody() userData: {username: string; email: string; password: string; role: string,firstName: string,lastName: string,specialization: string,contactNumber: string,availableDays: string},

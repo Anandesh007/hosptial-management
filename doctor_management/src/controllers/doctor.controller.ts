@@ -4,7 +4,6 @@ import {
   Filter,
   FilterExcludingWhere,
   repository,
-  Fields,
   Where,
 } from '@loopback/repository';
 import {
@@ -26,7 +25,7 @@ import {Doctor} from '../models';
 import {DoctorRepository,DoctorLeaveRepository,AppointmentRepository} from '../repositories';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'myjwtsecret';
+const JWT_SECRET = 'myjwtsecret';
 
 export class DoctorController {
   constructor(
@@ -38,21 +37,6 @@ export class DoctorController {
     public appointmentRepo: AppointmentRepository,
     @inject(RestBindings.Http.REQUEST) private req: Request,
   ) {}
-
-  private verifyToken(requiredRoles: string[] = []) {
-    const authHeader = this.req.headers.authorization;
-    if (!authHeader) throw new HttpErrors.Unauthorized('No authorization header');
-    const token = authHeader.replace('Bearer ', '');
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      if (requiredRoles.length && !requiredRoles.includes(decoded.role)) {
-        throw new HttpErrors.Forbidden('Access denied for this role');
-      }
-      return decoded; // {id, email, role}
-    } catch {
-      throw new HttpErrors.Unauthorized('Invalid or expired token');
-    }
-  }
 
   // 🔹 CREATE Doctor
   @post('/doctors')
@@ -73,10 +57,8 @@ export class DoctorController {
     })
     doctor: Omit<Doctor, 'doctorId'>,
   ): Promise<Doctor> {
-    const user = this.verifyToken(['admin']);
-    if(!user){
-      throw new HttpErrors.Forbidden('You are not allowed');
-    }
+    this.verifyToken(['admin']);
+    
     const now = new Date();
     doctor['createdAt'] = now;
     doctor['updatedAt'] = now;
@@ -184,7 +166,7 @@ export class DoctorController {
     body: {doctorId: number; leaveDate: string; reason?: string},
   ) {
     const user = this.verifyToken(['admin', 'doctor']);
-
+    
     const doctor = await this.doctorRepository.findById(body.doctorId);
     if (!doctor) throw new HttpErrors.NotFound('Doctor not found');
     if (user.role === 'doctor' && doctor.email !== user.email)
@@ -247,5 +229,20 @@ export class DoctorController {
       }
     }
     throw new HttpErrors.BadRequest('No available day found within next 7 days');
+  }
+
+   private verifyToken(requiredRoles: string[] = []) {
+    const authHeader = this.req.headers.authorization;
+    if (!authHeader) throw new HttpErrors.Unauthorized('No authorization header');
+    const token = authHeader.replace('Bearer ', '');
+    try {
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      if (requiredRoles.length && !requiredRoles.includes(decoded.role)) {
+        throw new HttpErrors.Forbidden('Access denied for this role');
+      }
+      return decoded; // {id, email, role}
+    } catch {
+      throw new HttpErrors.Unauthorized('Invalid or expired token');
+    }
   }
 }
